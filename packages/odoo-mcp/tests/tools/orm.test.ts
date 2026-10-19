@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { OdooSession } from '@netlinksinc/odoo-client';
-import { OdooAccessError, OdooError, OdooUserError } from '@netlinksinc/odoo-client';
+import { OdooAccessError, OdooError } from '@netlinksinc/odoo-client';
 import type { OdooClient } from '@netlinksinc/odoo-client';
 import type { Logger } from '../../src/logger.js';
 import type { ClientResolver } from '../../src/types.js';
@@ -31,9 +31,6 @@ function makeClientMock() {
   return {
     searchRead: vi.fn().mockResolvedValue([{ id: 1, name: 'Acme' }]),
     read: vi.fn().mockResolvedValue([{ id: 1, name: 'Acme' }]),
-    create: vi.fn().mockResolvedValue(42),
-    write: vi.fn().mockResolvedValue(true),
-    unlink: vi.fn().mockResolvedValue(true),
     searchCount: vi.fn().mockResolvedValue(7),
   } as unknown as OdooClient;
 }
@@ -84,20 +81,15 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('tool registration', () => {
-  it('registers exactly 6 tools', () => {
-    expect(serverMock.registerTool).toHaveBeenCalledTimes(6);
+  it('registers exactly 3 read-only tools', () => {
+    expect(serverMock.registerTool).toHaveBeenCalledTimes(3);
   });
 
   it('registers the expected tool names', () => {
     const names = (serverMock.registerTool as ReturnType<typeof vi.fn>).mock.calls.map(
       (call: unknown[]) => call[0],
     );
-    expect(names).toContain('odoo_search_read');
-    expect(names).toContain('odoo_read');
-    expect(names).toContain('odoo_create');
-    expect(names).toContain('odoo_write');
-    expect(names).toContain('odoo_unlink');
-    expect(names).toContain('odoo_search_count');
+    expect(names).toEqual(['odoo_search_read', 'odoo_read', 'odoo_search_count']);
   });
 });
 
@@ -161,29 +153,6 @@ describe('AC-2: odoo_search_read — missing model', () => {
   it('does NOT call client.searchRead when model is missing', async () => {
     await serverMock.handlers['odoo_search_read']({ fields: ['name'] });
     expect(clientMock.searchRead).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-3: odoo_create with sensitive field — args_sanitized redacts password
-// ---------------------------------------------------------------------------
-
-describe('AC-3: odoo_create — password redacted in log', () => {
-  it('logs args_sanitized with password: [REDACTED]', async () => {
-    await serverMock.handlers['odoo_create']({
-      model: 'res.users',
-      values: { name: 'Alice', password: 'secret' },
-    });
-
-    expect(loggerMock.toolCall).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tool: 'odoo_create',
-        status: 'ok',
-        args_sanitized: expect.objectContaining({
-          values: expect.objectContaining({ password: '[REDACTED]' }),
-        }),
-      }),
-    );
   });
 });
 
@@ -284,79 +253,6 @@ describe('odoo_read — valid call', () => {
     const payload = JSON.parse(response.content[0].text);
     expect(payload.error_type).toBe('InputValidationError');
     expect(clientMock.read).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// odoo_create happy path
-// ---------------------------------------------------------------------------
-
-describe('odoo_create — valid call', () => {
-  it('calls client.create with model, values, context and returns new id', async () => {
-    const response = (await serverMock.handlers['odoo_create']({
-      model: 'res.partner',
-      values: { name: 'New Co' },
-    })) as { isError: boolean; content: Array<{ type: string; text: string }> };
-
-    expect(clientMock.create).toHaveBeenCalledOnce();
-    const [model, values, context] = (
-      clientMock.create as ReturnType<typeof vi.fn>
-    ).mock.calls[0];
-    expect(model).toBe('res.partner');
-    expect(values).toEqual({ name: 'New Co' });
-    expect(context).toMatchObject({ uid: 1 });
-    expect(response.isError).toBe(false);
-    expect(JSON.parse(response.content[0].text)).toBe(42);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// odoo_write happy path
-// ---------------------------------------------------------------------------
-
-describe('odoo_write — valid call', () => {
-  it('calls client.write and returns true', async () => {
-    const response = (await serverMock.handlers['odoo_write']({
-      model: 'res.partner',
-      ids: [1],
-      values: { name: 'Updated' },
-    })) as { isError: boolean; content: Array<{ type: string; text: string }> };
-
-    expect(clientMock.write).toHaveBeenCalledOnce();
-    expect(response.isError).toBe(false);
-    expect(JSON.parse(response.content[0].text)).toBe(true);
-  });
-
-  it('surfaces OdooUserError from client.write as isError:true', async () => {
-    (clientMock.write as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new OdooUserError('Cannot write archived record'),
-    );
-    const response = (await serverMock.handlers['odoo_write']({
-      model: 'res.partner',
-      ids: [1],
-      values: { name: 'x' },
-    })) as { isError: boolean; content: Array<{ type: string; text: string }> };
-
-    expect(response.isError).toBe(true);
-    const payload = JSON.parse(response.content[0].text);
-    expect(payload.error_type).toBe('UserError');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// odoo_unlink happy path
-// ---------------------------------------------------------------------------
-
-describe('odoo_unlink — valid call', () => {
-  it('calls client.unlink and returns true', async () => {
-    const response = (await serverMock.handlers['odoo_unlink']({
-      model: 'res.partner',
-      ids: [5],
-    })) as { isError: boolean; content: Array<{ type: string; text: string }> };
-
-    expect(clientMock.unlink).toHaveBeenCalledOnce();
-    expect(response.isError).toBe(false);
-    expect(JSON.parse(response.content[0].text)).toBe(true);
   });
 });
 

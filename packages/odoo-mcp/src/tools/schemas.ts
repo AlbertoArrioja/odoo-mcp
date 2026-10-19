@@ -7,12 +7,6 @@ const MODEL_NAME = z
   .min(1)
   .regex(/^[a-z][a-z0-9_.]*$/, 'model must match /^[a-z][a-z0-9_.]*$/');
 
-// Reject method/action names with characters beyond safe snake_case identifiers.
-const METHOD_NAME = z
-  .string()
-  .min(1)
-  .regex(/^[a-z_][a-z0-9_]*$/, 'method must match /^[a-z_][a-z0-9_]*$/');
-
 const companyContext = {
   allowed_company_ids: z.array(z.number().int().positive()).optional(),
   active_company_id: z.number().int().positive().optional(),
@@ -39,31 +33,6 @@ export const readSchema = z.object({
 
 export type ReadInput = z.infer<typeof readSchema>;
 
-export const createSchema = z.object({
-  model: MODEL_NAME,
-  values: z.union([z.record(z.unknown()), z.array(z.record(z.unknown()))]),
-  ...companyContext,
-});
-
-export type CreateInput = z.infer<typeof createSchema>;
-
-export const writeSchema = z.object({
-  model: MODEL_NAME,
-  ids: z.array(z.number().int().positive()).min(1),
-  values: z.record(z.unknown()),
-  ...companyContext,
-});
-
-export type WriteInput = z.infer<typeof writeSchema>;
-
-export const unlinkSchema = z.object({
-  model: MODEL_NAME,
-  ids: z.array(z.number().int().positive()).min(1),
-  ...companyContext,
-});
-
-export type UnlinkInput = z.infer<typeof unlinkSchema>;
-
 export const searchCountSchema = z.object({
   model: MODEL_NAME,
   domain: z.array(z.unknown()).default([]),
@@ -71,34 +40,6 @@ export const searchCountSchema = z.object({
 });
 
 export type SearchCountInput = z.infer<typeof searchCountSchema>;
-
-export const executeSchema = z.object({
-  model: MODEL_NAME,
-  method: METHOD_NAME,
-  args: z.array(z.unknown()).default([]),
-  kwargs: z.record(z.unknown()).default({}),
-  ...companyContext,
-});
-
-export type ExecuteInput = z.infer<typeof executeSchema>;
-
-export const runReportSchema = z.object({
-  report_id: z.union([z.number().int().positive(), z.string().min(1)]),
-  doc_ids: z.array(z.number().int().positive()).min(1),
-  ...companyContext,
-});
-
-export type RunReportInput = z.infer<typeof runReportSchema>;
-
-export const callActionSchema = z.object({
-  model: MODEL_NAME,
-  ids: z.array(z.number().int().positive()).min(1),
-  action_name: METHOD_NAME,
-  context: z.record(z.unknown()).optional(),
-  ...companyContext,
-});
-
-export type CallActionInput = z.infer<typeof callActionSchema>;
 
 export const fieldsGetSchema = z.object({
   model: MODEL_NAME,

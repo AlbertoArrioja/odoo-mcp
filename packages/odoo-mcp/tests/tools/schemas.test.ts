@@ -3,13 +3,7 @@ import { ZodError } from 'zod';
 import {
   searchReadSchema,
   readSchema,
-  createSchema,
-  writeSchema,
-  unlinkSchema,
   searchCountSchema,
-  executeSchema,
-  runReportSchema,
-  callActionSchema,
   fieldsGetSchema,
 } from '../../src/tools/schemas.js';
 
@@ -76,46 +70,6 @@ describe('readSchema', () => {
   });
 });
 
-describe('createSchema', () => {
-  it('parses with a single record object', () => {
-    const result = createSchema.parse({ model: 'res.partner', values: { name: 'Acme' } });
-    expect(result.model).toBe('res.partner');
-    expect(result.values).toEqual({ name: 'Acme' });
-  });
-
-  it('parses with an array of record objects', () => {
-    const result = createSchema.parse({ model: 'res.partner', values: [{ name: 'A' }, { name: 'B' }] });
-    expect(Array.isArray(result.values)).toBe(true);
-  });
-
-  it('throws ZodError for missing values', () => {
-    expect(() => createSchema.parse({ model: 'res.partner' })).toThrow(ZodError);
-  });
-});
-
-describe('writeSchema', () => {
-  it('parses valid input', () => {
-    const result = writeSchema.parse({ model: 'res.partner', ids: [1], values: { name: 'New Name' } });
-    expect(result.ids).toEqual([1]);
-    expect(result.values).toEqual({ name: 'New Name' });
-  });
-
-  it('throws ZodError for empty ids', () => {
-    expect(() => writeSchema.parse({ model: 'res.partner', ids: [], values: {} })).toThrow(ZodError);
-  });
-});
-
-describe('unlinkSchema', () => {
-  it('parses valid input', () => {
-    const result = unlinkSchema.parse({ model: 'res.partner', ids: [1, 2, 3] });
-    expect(result.ids).toEqual([1, 2, 3]);
-  });
-
-  it('throws ZodError for empty ids', () => {
-    expect(() => unlinkSchema.parse({ model: 'res.partner', ids: [] })).toThrow(ZodError);
-  });
-});
-
 describe('searchCountSchema', () => {
   it('parses with default domain', () => {
     const result = searchCountSchema.parse({ model: 'res.partner' });
@@ -125,58 +79,6 @@ describe('searchCountSchema', () => {
   it('parses with custom domain', () => {
     const result = searchCountSchema.parse({ model: 'res.partner', domain: [['active', '=', true]] });
     expect(result.domain).toEqual([['active', '=', true]]);
-  });
-});
-
-describe('executeSchema', () => {
-  it('AC-3: parses with default args and kwargs', () => {
-    const result = executeSchema.parse({ model: 'res.partner', method: 'do_something' });
-    expect(result.args).toEqual([]);
-    expect(result.kwargs).toEqual({});
-  });
-
-  it('throws ZodError for empty method string', () => {
-    expect(() => executeSchema.parse({ model: 'res.partner', method: '' })).toThrow(ZodError);
-  });
-
-  it('parses with custom args and kwargs', () => {
-    const result = executeSchema.parse({ model: 'res.partner', method: 'action_confirm', args: [1, 2], kwargs: { context: {} } });
-    expect(result.args).toEqual([1, 2]);
-    expect(result.kwargs).toEqual({ context: {} });
-  });
-});
-
-describe('runReportSchema', () => {
-  it('parses with numeric report_id', () => {
-    const result = runReportSchema.parse({ report_id: 42, doc_ids: [1, 2] });
-    expect(result.report_id).toBe(42);
-    expect(result.doc_ids).toEqual([1, 2]);
-  });
-
-  it('parses with string report_id', () => {
-    const result = runReportSchema.parse({ report_id: 'account.report_invoice', doc_ids: [1] });
-    expect(result.report_id).toBe('account.report_invoice');
-  });
-
-  it('throws ZodError for empty doc_ids', () => {
-    expect(() => runReportSchema.parse({ report_id: 1, doc_ids: [] })).toThrow(ZodError);
-  });
-
-  it('throws ZodError for empty string report_id', () => {
-    expect(() => runReportSchema.parse({ report_id: '', doc_ids: [1] })).toThrow(ZodError);
-  });
-});
-
-describe('callActionSchema', () => {
-  it('parses valid input', () => {
-    const result = callActionSchema.parse({ model: 'sale.order', ids: [1], action_name: 'action_confirm' });
-    expect(result.action_name).toBe('action_confirm');
-    expect(result.context).toBeUndefined();
-  });
-
-  it('parses with optional context', () => {
-    const result = callActionSchema.parse({ model: 'sale.order', ids: [1], action_name: 'action_confirm', context: { lang: 'en_US' } });
-    expect(result.context).toEqual({ lang: 'en_US' });
   });
 });
 
@@ -193,23 +95,31 @@ describe('fieldsGetSchema', () => {
   });
 });
 
-describe('AC-4: all 10 schemas exported', () => {
+describe('AC-4: read-only schemas exported', () => {
   it('all schema exports are defined', () => {
     expect(searchReadSchema).toBeDefined();
     expect(readSchema).toBeDefined();
-    expect(createSchema).toBeDefined();
-    expect(writeSchema).toBeDefined();
-    expect(unlinkSchema).toBeDefined();
     expect(searchCountSchema).toBeDefined();
-    expect(executeSchema).toBeDefined();
-    expect(runReportSchema).toBeDefined();
-    expect(callActionSchema).toBeDefined();
     expect(fieldsGetSchema).toBeDefined();
+  });
+
+  it('write-path schemas are no longer exported', async () => {
+    const schemas = await import('../../src/tools/schemas.js');
+    for (const removed of [
+      'createSchema',
+      'writeSchema',
+      'unlinkSchema',
+      'executeSchema',
+      'runReportSchema',
+      'callActionSchema',
+    ]) {
+      expect(schemas).not.toHaveProperty(removed);
+    }
   });
 });
 
 // ---------------------------------------------------------------------------
-// F-002: MODEL_NAME and METHOD_NAME regex enforcement at schema level
+// F-002: MODEL_NAME regex enforcement at schema level
 // ---------------------------------------------------------------------------
 
 describe('F-002: model regex enforced at schema level', () => {
@@ -219,25 +129,5 @@ describe('F-002: model regex enforced at schema level', () => {
 
   it('searchReadSchema accepts valid dotted_snake_case model (res.partner)', () => {
     expect(() => searchReadSchema.parse({ model: 'res.partner' })).not.toThrow();
-  });
-});
-
-describe('F-002: method regex enforced at schema level', () => {
-  it('executeSchema rejects method with hyphen (My-Method)', () => {
-    expect(() =>
-      executeSchema.parse({ model: 'res.partner', method: 'My-Method' }),
-    ).toThrow(ZodError);
-  });
-
-  it('callActionSchema rejects action_name with hyphen (My-Action)', () => {
-    expect(() =>
-      callActionSchema.parse({ model: 'res.partner', ids: [1], action_name: 'My-Action' }),
-    ).toThrow(ZodError);
-  });
-
-  it('executeSchema accepts valid snake_case method (do_something)', () => {
-    expect(() =>
-      executeSchema.parse({ model: 'res.partner', method: 'do_something' }),
-    ).not.toThrow();
   });
 });
