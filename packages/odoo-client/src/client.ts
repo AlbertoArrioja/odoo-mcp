@@ -103,74 +103,16 @@ export class OdooClient {
     return result as OdooRecord[];
   }
 
-  async create(
-    model: string,
-    values: Record<string, unknown> | Record<string, unknown>[],
-    context?: Context,
-  ): Promise<number | number[]> {
-    const kwargs = compact({ context });
-    const result = await this.executeKw(model, 'create', [values], kwargs);
-    return result as number | number[];
-  }
-
-  async write(
-    model: string,
-    ids: number[],
-    values: Record<string, unknown>,
-    context?: Context,
-  ): Promise<boolean> {
-    const kwargs = compact({ context });
-    const result = await this.executeKw(model, 'write', [ids, values], kwargs);
-    return result as boolean;
-  }
-
-  async unlink(model: string, ids: number[], context?: Context): Promise<boolean> {
-    const kwargs = compact({ context });
-    const result = await this.executeKw(model, 'unlink', [ids], kwargs);
-    return result as boolean;
-  }
-
   async searchCount(model: string, domain: Domain, context?: Context): Promise<number> {
     const kwargs = compact({ context });
     const result = await this.executeKw(model, 'search_count', [domain], kwargs);
     return result as number;
   }
 
-  async execute(
-    model: string,
-    method: string,
-    args?: unknown[],
-    kwargs?: Record<string, unknown>,
-    context?: Context,
-  ): Promise<unknown> {
-    const mergedKwargs = compact({ ...(kwargs ?? {}), context });
-    return this.executeKw(model, method, args ?? [], mergedKwargs);
-  }
-
-  async runReport(
-    reportId: number | string,
-    docIds: number[],
-    context?: Context,
-  ): Promise<{ content: string; contentType: 'application/pdf' }> {
-    const kwargs = compact({ context });
-    const result = await this.executeKw(
-      'ir.actions.report',
-      '_render_qweb_pdf',
-      [reportId, docIds],
-      kwargs,
-    );
-    // Odoo returns [content_base64, content_type] tuple
-    const tuple = result as [string, string];
-    return { content: tuple[0], contentType: 'application/pdf' };
-  }
-
-  async callAction(
-    model: string,
-    ids: number[],
-    actionName: string,
-    context?: Context,
-  ): Promise<unknown> {
-    return this.execute(model, actionName, [ids], {}, context);
+  /** res.users.context_get — the caller's lang/tz/etc., used by the startup probe. */
+  async contextGet(): Promise<Context> {
+    const result = await this.executeKw('res.users', 'context_get', [], {});
+    return result as Context;
   }
 
   async fieldsGet(
@@ -184,6 +126,6 @@ export class OdooClient {
   }
 }
 // Note: capability probing is implemented in @netlinksinc/odoo-mcp's probe.ts
-// (the runProbe function) which uses this client's searchRead/execute methods.
+// (the runProbe function) which uses this client's searchRead/contextGet methods.
 // An earlier probe() method on OdooClient was removed during v0.1 hardening
 // because it duplicated runProbe and was never called from the server path.

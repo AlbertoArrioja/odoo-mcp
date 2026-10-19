@@ -1,21 +1,20 @@
 // Minimal ambient declaration so tsc resolves `process` without @types/node.
 declare const process: { stderr: { write: (data: string) => boolean } };
 
-import { OdooAuthError, OdooConnectionError, OdooError } from './errors.js';
-import { type JsonRpcRequest, REQUEST_TIMEOUT_MS, jsonRpc } from './rpc.js';
+import { OdooAuthError } from './errors.js';
+import { type JsonRpcRequest, jsonRpc } from './rpc.js';
 import type { Context, OdooConfig, OdooSession } from './types.js';
 
 /**
- * Pluggable Odoo authentication interface. Two strategies ship out of the
- * box: ApiKeyAuthStrategy (preferred) and SessionCookieAuthStrategy (legacy
- * fallback, kept for completeness but unused by createAuthStrategy on the
- * primary path).
+ * Pluggable Odoo authentication interface. ApiKeyAuthStrategy is the only
+ * shipped strategy (read-only fork: the legacy SessionCookieAuthStrategy was
+ * removed because it bypassed jsonRpc() and therefore the RPC allowlist).
  *
  * `authenticate(config)` performs the login round-trip and returns the populated
  * OdooSession.
  *
  * `applyAuth(request, session)` is a structural extension point — the shipped
- * strategies return the request unchanged because authentication is folded
+ * strategy returns the request unchanged because authentication is folded
  * into every /jsonrpc call by way of the `[db, uid, api_key, …]` args array.
  */
 export interface AuthStrategy {
@@ -142,95 +141,9 @@ export class ApiKeyAuthStrategy implements AuthStrategy {
 }
 
 /**
- * Legacy fallback strategy. Targets `/web/session/authenticate`, which only
- * works when the user's web password equals the value passed in ODOO_API_KEY.
- * Retained for the rare case where an Odoo instance has been configured that
- * way; not used by the primary createAuthStrategy code path going forward.
- */
-export class SessionCookieAuthStrategy implements AuthStrategy {
-  async authenticate(config: OdooConfig): Promise<OdooSession> {
-    const body = {
-      jsonrpc: '2.0' as const,
-      method: 'call' as const,
-      id: Date.now(),
-      params: {
-        db: config.db,
-        login: config.username,
-        password: config.apiKey,
-      },
-    };
-
-    const controller = new AbortController();
-    const timeoutHandle = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-    let response: Response;
-    try {
-      response = await fetch(`${config.url}/web/session/authenticate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } catch (err: unknown) {
-      clearTimeout(timeoutHandle);
-      if (err instanceof Error && err.name === 'AbortError') {
-        throw new OdooConnectionError('Request timeout after 30s');
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      throw new OdooConnectionError(message);
-    }
-
-    clearTimeout(timeoutHandle);
-
-    const json = (await response.json()) as {
-      jsonrpc: '2.0';
-      id: number;
-      result?: {
-        uid?: number;
-        company_id?: number;
-        allowed_company_ids?: number[];
-        user_context?: Context;
-      };
-      error?: {
-        code: number;
-        message: string;
-        data: { name: string; message: string; debug: string };
-      };
-    };
-
-    if (json.error) {
-      const { name, message, debug } = json.error.data;
-      if (name === 'odoo.exceptions.AccessDenied') {
-        throw new OdooAuthError(message, debug);
-      }
-      throw new OdooError('ServerError', message, undefined, undefined, debug);
-    }
-
-    const result = json.result;
-    if (!result || typeof result.uid !== 'number') {
-      throw new OdooAuthError('web/session/authenticate returned no uid');
-    }
-    return {
-      uid: result.uid,
-      companyId: result.company_id ?? 1,
-      allowedCompanyIds: result.allowed_company_ids ?? [result.company_id ?? 1],
-      userContext: result.user_context ?? {},
-    };
-  }
-
-  applyAuth(request: JsonRpcRequest, _session: OdooSession): JsonRpcRequest {
-    return request;
-  }
-}
-
-/**
  * Factory: uses ApiKeyAuthStrategy (classic /jsonrpc external API). Writes a
  * plaintext warning to stderr when the URL is http:// per US-2 AC-5.
- *
- * Note: SessionCookieAuthStrategy is no longer attempted as a fallback because
- * /web/session/authenticate is incompatible with API-key auth on modern Odoo
- * instances. If callers explicitly need cookie auth, they can instantiate
- * SessionCookieAuthStrategy directly.
+
  */
 export async function createAuthStrategy(config: OdooConfig): Promise<AuthStrategy> {
   if (config.url.startsWith('http://')) {

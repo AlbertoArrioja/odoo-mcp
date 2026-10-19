@@ -4,11 +4,7 @@
 //   Smoke test against live Odoo passes — see scripts/smoke-test.mjs.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OdooAuthError } from '../src/errors.js';
-import {
-  ApiKeyAuthStrategy,
-  SessionCookieAuthStrategy,
-  createAuthStrategy,
-} from '../src/auth.js';
+import { ApiKeyAuthStrategy, createAuthStrategy } from '../src/auth.js';
 import type { OdooConfig } from '../src/types.js';
 
 // ---------------------------------------------------------------------------
@@ -132,55 +128,6 @@ describe.skip('ApiKeyAuthStrategy', () => {
   });
 });
 
-describe.skip('SessionCookieAuthStrategy', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  // TC-5: parses session_id from Set-Cookie header
-  it('authenticate parses session_id from Set-Cookie response header', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        makeFetchResponse(
-          {
-            jsonrpc: '2.0',
-            id: 1,
-            result: {
-              uid: 3,
-              company_id: 2,
-              allowed_company_ids: [2],
-              user_context: { lang: 'fr_FR', tz: 'Europe/Paris' },
-            },
-          },
-          200,
-          { 'set-cookie': 'session_id=abc123xyz; HttpOnly; Path=/' },
-        ),
-      ),
-    );
-
-    const strategy = new SessionCookieAuthStrategy();
-    const session = await strategy.authenticate(BASE_CONFIG);
-
-    expect(session.uid).toBe(3);
-    expect(session.companyId).toBe(2);
-    expect(session.sessionId).toBe('abc123xyz');
-  });
-
-  // TC-6: AccessDenied → OdooAuthError (same error mapping as ApiKey path)
-  it('authenticate throws OdooAuthError when Odoo returns AccessDenied', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        makeAuthError('odoo.exceptions.AccessDenied', 'Access denied'),
-      ),
-    );
-
-    const strategy = new SessionCookieAuthStrategy();
-    await expect(strategy.authenticate(BASE_CONFIG)).rejects.toBeInstanceOf(OdooAuthError);
-  });
-});
-
 describe.skip('createAuthStrategy', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -216,40 +163,6 @@ describe.skip('createAuthStrategy', () => {
     await createAuthStrategy(BASE_CONFIG);
 
     expect(stderrSpy).not.toHaveBeenCalled();
-  });
-
-  // TC-9: falls back to SessionCookieAuthStrategy when ApiKey throws OdooAuthError
-  it('falls back to SessionCookieAuthStrategy when ApiKeyAuthStrategy throws OdooAuthError', async () => {
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-
-    const accessDeniedResponse = makeAuthError(
-      'odoo.exceptions.AccessDenied',
-      'Invalid credentials',
-    );
-    const cookieSuccessResponse = makeFetchResponse(
-      {
-        jsonrpc: '2.0',
-        id: 1,
-        result: {
-          uid: 5,
-          company_id: 1,
-          allowed_company_ids: [1],
-          user_context: {},
-        },
-      },
-      200,
-      { 'set-cookie': 'session_id=sess999; Path=/' },
-    );
-
-    // First call (ApiKeyAuthStrategy.authenticate) → AccessDenied
-    // Second call (SessionCookieAuthStrategy.authenticate) → success
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValueOnce(accessDeniedResponse).mockResolvedValueOnce(cookieSuccessResponse),
-    );
-
-    const strategy = await createAuthStrategy(HTTP_CONFIG);
-    expect(strategy).toBeInstanceOf(SessionCookieAuthStrategy);
   });
 
   // TC-10: rethrows non-OdooAuthError from ApiKeyAuthStrategy

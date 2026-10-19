@@ -51,7 +51,6 @@ function makeUserStore(): UserStore {
 
 function makeOdooClient(): OdooClient {
   return {
-    execute: vi.fn().mockResolvedValue(1),
     searchRead: vi.fn(),
   } as unknown as OdooClient;
 }
@@ -695,7 +694,6 @@ describe('handleAuthorize POST', () => {
     const userStore = makeUserStore();
     const probeClient = makeOdooClient();
     vi.mocked(userStore.isAllowed).mockReturnValue(true);
-    vi.mocked(probeClient.execute).mockResolvedValue(42);
 
     const config = makeConfig({ userStore, probeClient });
     const endpoints = createOAuthEndpoints(config);
@@ -805,7 +803,6 @@ describe('handleAuthorize POST', () => {
     const userStore = makeUserStore();
     const probeClient = makeOdooClient();
     vi.mocked(userStore.isAllowed).mockReturnValue(true);
-    vi.mocked(probeClient.execute).mockResolvedValue(1);
 
     const config = makeConfig({ userStore, probeClient });
     const endpoints = createOAuthEndpoints(config);
@@ -847,7 +844,6 @@ describe('handleToken', () => {
     const userStore = makeUserStore();
     const probeClient = makeOdooClient();
     vi.mocked(userStore.isAllowed).mockReturnValue(true);
-    vi.mocked(probeClient.execute).mockResolvedValue(1);
     vi.mocked(userStore.register).mockResolvedValue('b'.repeat(64));
 
     const config = makeConfig({ userStore, probeClient });
@@ -867,7 +863,6 @@ describe('handleToken', () => {
     const userStore = makeUserStore();
     const probeClient = makeOdooClient();
     vi.mocked(userStore.isAllowed).mockReturnValue(true);
-    vi.mocked(probeClient.execute).mockResolvedValue(1);
     vi.mocked(userStore.register).mockResolvedValue('c'.repeat(64));
 
     const config = makeConfig({ userStore, probeClient });
@@ -893,7 +888,6 @@ describe('handleToken', () => {
     const userStore = makeUserStore();
     const probeClient = makeOdooClient();
     vi.mocked(userStore.isAllowed).mockReturnValue(true);
-    vi.mocked(probeClient.execute).mockResolvedValue(1);
     vi.mocked(userStore.register).mockResolvedValue('d'.repeat(64));
 
     const config = makeConfig({ userStore, probeClient });
@@ -960,7 +954,6 @@ describe('handleToken', () => {
     const userStore = makeUserStore();
     const probeClient = makeOdooClient();
     vi.mocked(userStore.isAllowed).mockReturnValue(true);
-    vi.mocked(probeClient.execute).mockResolvedValue(1);
     vi.mocked(userStore.register).mockResolvedValue('e'.repeat(64));
 
     const config = makeConfig({ userStore, probeClient });
@@ -1017,7 +1010,6 @@ describe('handleToken', () => {
     const userStore = makeUserStore();
     const probeClient = makeOdooClient();
     vi.mocked(userStore.isAllowed).mockReturnValue(true);
-    vi.mocked(probeClient.execute).mockResolvedValue(1);
 
     const config = makeConfig({ userStore, probeClient });
     const endpoints = createOAuthEndpoints(config);
@@ -1176,7 +1168,6 @@ describe('T-16 threat-model: allowlist oracle (US-4 AC-6)', () => {
     const userStore = makeUserStore();
     const probeClient = makeOdooClient();
     vi.mocked(userStore.isAllowed).mockReturnValue(true);
-    vi.mocked(probeClient.execute).mockResolvedValue(1);
 
     const config = makeConfig({ userStore, probeClient });
     const endpoints = createOAuthEndpoints(config);
@@ -1213,7 +1204,6 @@ describe('T-16 threat-model: allowlist oracle (US-4 AC-6)', () => {
     const userStore = makeUserStore();
     const probeClient = makeOdooClient();
     vi.mocked(userStore.isAllowed).mockReturnValue(true);
-    vi.mocked(probeClient.execute).mockResolvedValue(1);
 
     const config = makeConfig({ userStore, probeClient });
     const endpoints = createOAuthEndpoints(config);
