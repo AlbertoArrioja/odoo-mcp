@@ -7,6 +7,7 @@ import {
   OdooUserError,
   OdooValidationError,
 } from './errors.js';
+import { assertReadOnlyRpc } from './read-only.js';
 
 /**
  * Per-request abort threshold. Aligned with Odoo's typical worker timeout
@@ -68,6 +69,9 @@ export async function jsonRpc(
   params: Record<string, unknown>,
   headers?: Record<string, string>,
 ): Promise<unknown> {
+  // Read-only fork: reject anything outside the allowlist before any I/O.
+  assertReadOnlyRpc(endpoint, params);
+
   const id = nextId();
 
   const body: JsonRpcRequest = {
