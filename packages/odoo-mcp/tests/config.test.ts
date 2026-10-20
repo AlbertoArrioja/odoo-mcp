@@ -300,3 +300,60 @@ describe('loadConfig', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// ODOO_MCP_AGGREGATE_MODELS (read-only fork: odoo_read_group model allowlist)
+// ---------------------------------------------------------------------------
+
+describe('loadConfig — ODOO_MCP_AGGREGATE_MODELS', () => {
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.spyOn(process, 'exit').mockImplementation(((code) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('defaults to an empty list (tool disabled) when unset', () => {
+    expect(loadConfig(VALID_ENV).aggregateModels).toEqual([]);
+  });
+
+  it('treats an empty or whitespace-only value as unset', () => {
+    expect(loadConfig({ ...VALID_ENV, ODOO_MCP_AGGREGATE_MODELS: '' }).aggregateModels).toEqual([]);
+    expect(
+      loadConfig({ ...VALID_ENV, ODOO_MCP_AGGREGATE_MODELS: ' , ,' }).aggregateModels,
+    ).toEqual([]);
+  });
+
+  it('parses a comma-separated list, trimming spaces and dropping duplicates', () => {
+    const config = loadConfig({
+      ...VALID_ENV,
+      ODOO_MCP_AGGREGATE_MODELS:
+        'sale.order, sale.order.line,account.move ,res.partner,stock.quant,purchase.order,sale.order',
+    });
+    expect(config.aggregateModels).toEqual([
+      'sale.order',
+      'sale.order.line',
+      'account.move',
+      'res.partner',
+      'stock.quant',
+      'purchase.order',
+    ]);
+  });
+
+  it.each(['Sale.Order', 'sale order', 'sale.order;res.users', '1sale.order', 'sale-order'])(
+    'exits 1 and marks the variable invalid for entry %j',
+    (bad) => {
+      expect(() =>
+        loadConfig({ ...VALID_ENV, ODOO_MCP_AGGREGATE_MODELS: `sale.order,${bad}` }),
+      ).toThrow('exit:1');
+      const out = JSON.parse((stderrSpy.mock.calls[0][0] as string).trim());
+      expect(out.invalid).toContain('ODOO_MCP_AGGREGATE_MODELS');
+    },
+  );
+});

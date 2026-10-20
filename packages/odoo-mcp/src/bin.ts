@@ -102,6 +102,7 @@ const STARTUP_TIMEOUT_MS = 30_000;
         createOdooMcpServer({
           odooConfig: config.odoo,
           logFile: config.logFile,
+          aggregateModels: config.aggregateModels,
           clientResolver,
         }),
         new Promise<never>((_, reject) =>
@@ -170,6 +171,7 @@ const STARTUP_TIMEOUT_MS = 30_000;
         createOdooMcpServer({
           odooConfig: config.odoo,
           logFile: config.logFile,
+          aggregateModels: config.aggregateModels,
         }),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('startup_timeout')), STARTUP_TIMEOUT_MS),

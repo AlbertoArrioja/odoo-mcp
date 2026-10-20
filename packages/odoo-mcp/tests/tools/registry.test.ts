@@ -16,6 +16,7 @@ import type { OdooConfig } from '@netlinksinc/odoo-client';
 const EXPECTED_TOOLS = [
   'odoo_fields_get',
   'odoo_read',
+  'odoo_read_group',
   'odoo_search_count',
   'odoo_search_read',
 ];

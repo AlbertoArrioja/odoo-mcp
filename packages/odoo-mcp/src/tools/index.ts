@@ -4,6 +4,7 @@ import type { Logger } from '../logger.js';
 import type { ClientResolver } from '../types.js';
 import { registerIntrospectTool } from './introspect.js';
 import { registerOrmTools } from './orm.js';
+import { registerReadGroupTool } from './read-group.js';
 
 /**
  * Read-only fork: only tools that read from Odoo are registered. The write
@@ -16,7 +17,9 @@ export function registerAllTools(
   server: McpServer,
   clientResolver: ClientResolver,
   logger: Logger,
+  options: { aggregateModels: readonly string[] } = { aggregateModels: [] },
 ): void {
   registerOrmTools(server, clientResolver, logger);
   registerIntrospectTool(server, clientResolver, logger);
+  registerReadGroupTool(server, clientResolver, logger, options.aggregateModels);
 }

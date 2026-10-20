@@ -1,5 +1,12 @@
 import { type AuthStrategy, createAuthStrategy } from './auth.js';
 import { OdooAuthError } from './errors.js';
+import {
+  type ReadGroupRequest,
+  type ReadGroupRow,
+  buildReadGroupCall,
+  normalizeReadGroupRows,
+  parseMajorVersion,
+} from './read-group.js';
 import { jsonRpc } from './rpc.js';
 import type { Context, Domain, OdooConfig, OdooRecord, OdooSession } from './types.js';
 
@@ -26,6 +33,8 @@ function compact(obj: Record<string, unknown>): Record<string, unknown> {
 export class OdooClient {
   private session?: OdooSession;
   private strategy?: AuthStrategy;
+  // common.version is fetched once per client (one client per user session).
+  private serverMajor?: Promise<number>;
 
   constructor(private readonly config: OdooConfig) {}
 
@@ -113,6 +122,44 @@ export class OdooClient {
   async contextGet(): Promise<Context> {
     const result = await this.executeKw('res.users', 'context_get', [], {});
     return result as Context;
+  }
+
+  /**
+   * Odoo major version from `common.version`, fetched once per client
+   * instance and cached. A failed lookup is not cached, so it is retried.
+   */
+  async serverMajorVersion(): Promise<number> {
+    if (!this.serverMajor) {
+      this.serverMajor = jsonRpc(this.config.url, JSONRPC, {
+        service: 'common',
+        method: 'version',
+        args: [],
+      })
+        .then(parseMajorVersion)
+        .catch((err: unknown) => {
+          this.serverMajor = undefined;
+          throw err;
+        });
+    }
+    return this.serverMajor;
+  }
+
+  /**
+   * Grouped aggregation computed by Odoo (SQL GROUP BY), normalised to the
+   * same row shape on every version: formatted_read_group on Odoo 19+,
+   * read_group(lazy=False) before. Callers must validate field/aggregate
+   * specs; see read-group.ts for the row shape.
+   */
+  async readGroup(
+    model: string,
+    request: ReadGroupRequest,
+    context?: Context,
+  ): Promise<ReadGroupRow[]> {
+    this.requireSession();
+    const major = await this.serverMajorVersion();
+    const { method, args, kwargs } = buildReadGroupCall(major, request, context);
+    const rows = await this.executeKw(model, method, args, kwargs);
+    return normalizeReadGroupRows(major, request, rows);
   }
 
   async fieldsGet(

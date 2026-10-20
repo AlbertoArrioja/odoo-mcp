@@ -11,6 +11,8 @@ export interface McpServerConfig {
   odooConfig: OdooConfig;
   logFile?: string;
   clientResolver?: ClientResolver; // undefined = stdio mode (use startup singleton)
+  /** Models odoo_read_group may aggregate (ODOO_MCP_AGGREGATE_MODELS). Empty = tool rejects all calls. */
+  aggregateModels?: string[];
 }
 
 /**
@@ -81,7 +83,9 @@ export async function createOdooMcpServer(config: McpServerConfig): Promise<{
   function createServerInstance(): McpServer {
     const instance = new McpServer({ name: 'odoo-mcp', version: '0.2.2' });
     registerResources(instance, probe);
-    registerAllTools(instance, resolver, logger);
+    registerAllTools(instance, resolver, logger, {
+      aggregateModels: config.aggregateModels ?? [],
+    });
     return instance;
   }
 

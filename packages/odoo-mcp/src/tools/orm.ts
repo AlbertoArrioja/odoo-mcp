@@ -12,13 +12,13 @@ import type { ClientResolver, RequestContext } from '../types.js';
 type AsyncLocalStorageLike<T> = { getStore(): T | undefined };
 import { readSchema, searchCountSchema, searchReadSchema } from './schemas.js';
 
-type ToolResult = {
+export type ToolResult = {
   content: Array<{ type: 'text'; text: string }>;
   isError: boolean;
 };
 
 /** Retrieve the user_id from AsyncLocalStorage context set by HTTP transport (T-11). */
-async function getUserId(): Promise<string | undefined> {
+export async function getUserId(): Promise<string | undefined> {
   try {
     // Lazy access — http-transport.ts exports requestContextStorage in T-11
     const httpTransport = (await import('../http-transport.js')) as unknown as {
@@ -31,7 +31,7 @@ async function getUserId(): Promise<string | undefined> {
 }
 
 /** Format a ZodError as an InputValidationError tool result. */
-function zodErrorResult(
+export function zodErrorResult(
   tool: string,
   err: ZodError,
   logger: Logger,
@@ -40,6 +40,18 @@ function zodErrorResult(
   user_id: string | undefined,
 ): ToolResult {
   const message = err.issues.map((i) => i.message).join('; ');
+  return inputErrorResult(tool, message, logger, t0, rawArgs, user_id);
+}
+
+/** Log and return an InputValidationError tool result with the given message. */
+export function inputErrorResult(
+  tool: string,
+  message: string,
+  logger: Logger,
+  t0: number,
+  rawArgs: Record<string, unknown>,
+  user_id: string | undefined,
+): ToolResult {
   logger.toolCall({
     tool,
     args_sanitized: sanitizeArgs(tool, rawArgs),
@@ -60,7 +72,9 @@ function zodErrorResult(
 }
 
 /** Shape every tool handler funnels through after SDK-level Zod parsing. */
-async function callOrm<T extends { allowed_company_ids?: number[]; active_company_id?: number }>(
+export async function callOrm<
+  T extends { allowed_company_ids?: number[]; active_company_id?: number },
+>(
   tool: string,
   args: T,
   exec: (parsed: T, context: Context) => Promise<unknown>,

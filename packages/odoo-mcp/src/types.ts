@@ -15,6 +15,11 @@ export interface AppConfig {
   odoo: OdooConfig;
   /** Optional path to a file for structured JSON log output. */
   logFile?: string;
+  /**
+   * Models odoo_read_group may aggregate, from ODOO_MCP_AGGREGATE_MODELS
+   * (comma-separated). Empty when unset — the tool then rejects every call.
+   */
+  aggregateModels: string[];
   /** Transport mode: `stdio` for local MCP use, `http` for remote HTTP+SSE. */
   mode: 'stdio' | 'http';
   /**
