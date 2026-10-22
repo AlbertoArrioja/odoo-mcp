@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OdooError } from '../src/errors.js';
 import {
   type ReadGroupRequest,
+  assertDateGroupbyGranularity,
   buildReadGroupCall,
   normalizeReadGroupRows,
   parseMajorVersion,
@@ -130,10 +131,46 @@ describe('buildReadGroupCall', () => {
       aggregates: ['__count'],
     });
     expect(buildReadGroupCall(17, req).kwargs).toEqual({
-      fields: [],
+      fields: ['__count'],
       groupby: ['state'],
       lazy: false,
     });
+  });
+
+  it('Odoo ≤ 18: never sends an empty fields list (Odoo would aggregate every numeric field)', () => {
+    const req = { domain: [], groupby: ['partner_id'], aggregates: [] };
+    expect(buildReadGroupCall(16, req).kwargs.fields).toEqual(['__count']);
+  });
+
+  it('Odoo ≤ 18: rejects ordering by a field grouped at two granularities', () => {
+    const req = {
+      domain: [],
+      groupby: ['date_order:year', 'date_order:month'],
+      aggregates: [],
+      orderby: 'date_order:year desc',
+    };
+    expect(() => buildReadGroupCall(18, req)).toThrow(/ambiguous/);
+    // Odoo 19 accepts the spec as-is, and other terms are still fine on ≤ 18.
+    expect(buildReadGroupCall(19, req).kwargs.order).toBe('date_order:year desc');
+    expect(buildReadGroupCall(18, { ...req, orderby: '__count desc' }).kwargs.orderby).toBe(
+      '__count desc',
+    );
+  });
+});
+
+describe('assertDateGroupbyGranularity', () => {
+  const FIELDS = { partner_id: { type: 'many2one' }, date_order: { type: 'datetime' } };
+
+  it('rejects a date/datetime groupby without a granularity', () => {
+    const req = { domain: [], groupby: ['partner_id', 'date_order'], aggregates: [] };
+    expect(() => assertDateGroupbyGranularity('sale.order', req, FIELDS)).toThrow(
+      'groupby "date_order" is a datetime field: add a granularity, e.g. "date_order:month"',
+    );
+  });
+
+  it('accepts dated specs, non-date fields and fields unknown to fields_get', () => {
+    const req = { domain: [], groupby: ['partner_id', 'date_order:month', 'x_unknown'], aggregates: [] };
+    expect(() => assertDateGroupbyGranularity('sale.order', req, FIELDS)).not.toThrow();
   });
 });
 
@@ -144,6 +181,20 @@ describe('normalizeReadGroupRows', () => {
 
   it('Odoo 18 rows normalise to the SAME shape', () => {
     expect(normalizeReadGroupRows(18, REQ, RAW_V18)).toEqual(EXPECTED);
+  });
+
+  it('Odoo ≤ 18 without __range bounds keeps the label instead of collapsing to false', () => {
+    const req = { domain: [], groupby: ['date_order:month'], aggregates: [] };
+    const raw = [
+      { 'date_order:month': 'January 2026', __count: 2 },
+      { 'date_order:month': 'February 2026', __count: 1, __range: {} },
+      { 'date_order:month': false, __count: 3 },
+    ];
+    expect(normalizeReadGroupRows(18, req, raw)).toEqual([
+      { 'date_order:month': { value: null, label: 'January 2026' }, __count: 2 },
+      { 'date_order:month': { value: null, label: 'February 2026' }, __count: 1 },
+      { 'date_order:month': false, __count: 3 },
+    ]);
   });
 
   it('missing aggregate values become null and missing count becomes 0', () => {
@@ -176,7 +227,6 @@ async function client(): Promise<OdooClient> {
     authenticate: vi
       .fn()
       .mockResolvedValue({ uid: 7, companyId: 1, allowedCompanyIds: [1], userContext: {} }),
-    applyAuth: vi.fn(),
   });
   const c = new OdooClient({
     url: 'https://odoo.example.test',
@@ -188,15 +238,29 @@ async function client(): Promise<OdooClient> {
   return c;
 }
 
-/** Fake Odoo: answers common.version with `major`, execute_kw with `rows`. */
+const FIELD_TYPES = { partner_id: { type: 'many2one' }, date_order: { type: 'datetime' } };
+
+/**
+ * Fake Odoo: answers common.version with `major`, fields_get with FIELD_TYPES
+ * and any other execute_kw with `rows`.
+ */
 function fakeOdoo(major: number, rows: unknown) {
-  mockJsonRpc.mockImplementation(async (_url: string, _ep: string, params: { service: string }) =>
-    params.service === 'common' ? { server_version_info: [major, 0, 0, 'final', 0, ''] } : rows,
+  mockJsonRpc.mockImplementation(
+    async (_url: string, _ep: string, params: { service: string; args: unknown[] }) => {
+      if (params.service === 'common') return { server_version_info: [major, 0, 0, 'final', 0, ''] };
+      return params.args[4] === 'fields_get' ? FIELD_TYPES : rows;
+    },
   );
 }
 
 const versionCalls = () =>
   mockJsonRpc.mock.calls.filter((c) => (c[2] as { service: string }).service === 'common').length;
+
+/** execute_kw method names called so far, in order. */
+const ormMethods = () =>
+  mockJsonRpc.mock.calls
+    .filter((c) => (c[2] as { service: string }).service === 'object')
+    .map((c) => (c[2] as { args: unknown[] }).args[4]);
 
 describe('OdooClient.readGroup', () => {
   beforeEach(() => {
@@ -207,16 +271,36 @@ describe('OdooClient.readGroup', () => {
     const c = await client();
     fakeOdoo(19, RAW_V19);
     await expect(c.readGroup('sale.order', REQ)).resolves.toEqual(EXPECTED);
-    const call = mockJsonRpc.mock.calls.find((x) => x[2].service === 'object');
-    expect(call?.[2].args.slice(3, 5)).toEqual(['sale.order', 'formatted_read_group']);
+    const call = mockJsonRpc.mock.calls.find((x) => x[2].args?.[4] === 'formatted_read_group');
+    expect(call?.[2].args[3]).toBe('sale.order');
   });
 
   it('uses read_group on Odoo 18 and normalises to the same result', async () => {
     const c = await client();
     fakeOdoo(18, RAW_V18);
     await expect(c.readGroup('sale.order', REQ)).resolves.toEqual(EXPECTED);
-    const call = mockJsonRpc.mock.calls.find((x) => x[2].service === 'object');
-    expect(call?.[2].args.slice(3, 5)).toEqual(['sale.order', 'read_group']);
+    const call = mockJsonRpc.mock.calls.find((x) => x[2].args?.[4] === 'read_group');
+    expect(call?.[2].args[3]).toBe('sale.order');
+  });
+
+  it('checks field types only when a groupby has no granularity', async () => {
+    const c = await client();
+    fakeOdoo(19, RAW_V19);
+    await c.readGroup('sale.order', REQ);
+    expect(ormMethods()).toEqual(['fields_get', 'formatted_read_group']);
+
+    mockJsonRpc.mockClear();
+    await c.readGroup('sale.order', { ...REQ, groupby: ['date_order:month'] });
+    expect(ormMethods()).toEqual(['formatted_read_group']);
+  });
+
+  it('rejects a date groupby without granularity before grouping', async () => {
+    const c = await client();
+    fakeOdoo(18, RAW_V18);
+    await expect(
+      c.readGroup('sale.order', { ...REQ, groupby: ['date_order'], orderby: undefined }),
+    ).rejects.toMatchObject({ errorType: 'InputValidationError', model: 'sale.order' });
+    expect(ormMethods()).toEqual(['fields_get']);
   });
 
   it('calls common.version only once per client across calls', async () => {

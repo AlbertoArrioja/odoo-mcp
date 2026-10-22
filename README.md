@@ -37,9 +37,9 @@ También se eliminaron `OdooClient.create/write/unlink/execute/callAction/runRep
 |---|---|
 | `model` | Modelo; debe estar en `ODOO_MCP_AGGREGATE_MODELS` |
 | `domain` | Opcional, igual que en `odoo_search_read` |
-| `groupby` | Arreglo de campos; los de fecha requieren granularidad `campo:day\|week\|month\|quarter\|year` (p. ej. `date_order:month`). Vacío = un solo grupo total |
+| `groupby` | Arreglo de campos; los de fecha requieren granularidad `campo:day\|week\|month\|quarter\|year` (p. ej. `date_order:month`) y sin ella la llamada se rechaza. Vacío = un solo grupo total |
 | `aggregates` | Opcional, `campo:sum\|avg\|min\|max\|count\|count_distinct`. Si se omite, solo se devuelve el conteo |
-| `orderby` | Opcional; términos separados por coma sobre los `groupby`/`aggregates` pedidos o `__count`, con `asc`/`desc` |
+| `orderby` | Opcional; términos separados por coma sobre los `groupby`/`aggregates` pedidos o `__count`, con `asc`/`desc`. En Odoo ≤ 18 se rechaza ordenar por un campo agrupado con dos granularidades (p. ej. `date_order:year` y `date_order:month`) |
 | `limit` | Opcional, por omisión 80, máximo 500 |
 | `allowed_company_ids`, `active_company_id` | Igual que en las demás herramientas |
 
@@ -58,6 +58,8 @@ Respuesta (idéntica en todas las versiones de Odoo):
   "has_more": false
 }
 ```
+
+Si un Odoo ≤ 18 no devuelve los límites del rango de fechas, el grupo conserva su `label` con `"value": null`.
 
 En Odoo 19+ usa `formatted_read_group`; en versiones anteriores, `read_group` con `lazy=False`. La versión se detecta una vez por sesión de usuario (`common.version`). La herramienta se ejecuta con el `OdooClient` del usuario autenticado por OAuth, nunca con una credencial compartida.
 

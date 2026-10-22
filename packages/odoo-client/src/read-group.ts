@@ -24,7 +24,8 @@ export const FORMATTED_READ_GROUP_MIN_MAJOR = 19;
  * One normalised group. Keys:
  *   - each groupby spec, e.g. `partner_id` → `[id, display_name]` or `false`;
  *     `date_order:month` → `{ value: '2026-01-01', label: 'January 2026' }`
- *     or `false`; other field types → the raw value.
+ *     or `false`; `value` is null if an Odoo ≤ 18 server reported the label
+ *     without `__range` bounds; other field types → the raw value.
  *   - each aggregate spec, e.g. `amount_total:sum` → number | null.
  *   - `__count` → number of records in the group.
  */
@@ -44,6 +45,35 @@ export interface ReadGroupRequest {
 /** A groupby spec carries a date granularity iff it contains ':'. */
 function isDateSpec(spec: string): boolean {
   return spec.includes(':');
+}
+
+/** Groupby specs without a granularity — the ones whose field type must be checked. */
+export function bareGroupbyFields(req: ReadGroupRequest): string[] {
+  return req.groupby.filter((spec) => !isDateSpec(spec));
+}
+
+/**
+ * Reject a date/datetime groupby without a granularity. Odoo would silently
+ * default to month and return a version-specific shape (a bare label on ≤ 18,
+ * a `[start, label]` pair on 19), so the result could not be normalised.
+ * `fields` is a `fields_get(attributes=['type'])` result; fields missing from
+ * it are left for Odoo to reject.
+ */
+export function assertDateGroupbyGranularity(
+  model: string,
+  req: ReadGroupRequest,
+  fields: Record<string, unknown>,
+): void {
+  for (const spec of bareGroupbyFields(req)) {
+    const type = (fields[spec] as { type?: unknown } | undefined)?.type;
+    if (type === 'date' || type === 'datetime') {
+      throw new OdooError(
+        'InputValidationError',
+        `groupby "${spec}" is a ${type} field: add a granularity, e.g. "${spec}:month"`,
+        model,
+      );
+    }
+  }
 }
 
 /** Alias used for an aggregate on Odoo ≤ 18 (`amount_total:sum` → `amount_total__sum`). */
@@ -73,17 +103,29 @@ export function parseMajorVersion(version: unknown): number {
  * Translate an orderby string to what each Odoo branch expects.
  *   19+  : specs are accepted as-is by formatted_read_group's `order`.
  *   ≤ 18 : read_group matches groupby terms by bare field name and aggregate
- *          terms by alias.
+ *          terms by alias. A bare name is ambiguous when the same field is
+ *          grouped at two granularities (`date_order:year`, `date_order:month`)
+ *          — Odoo would pick one of them — so ordering by such a term is
+ *          rejected instead of silently sorting by the wrong key.
  */
 function translateOrderby(orderby: string, req: ReadGroupRequest, legacy: boolean): string {
   if (!legacy) return orderby;
+  const fieldOf = (spec: string) => spec.split(':')[0];
   return orderby
     .split(',')
     .map((term) => {
       const [key, direction] = term.trim().split(/\s+/);
       let translated = key;
       if (req.aggregates.includes(key)) translated = legacyAlias(key);
-      else if (req.groupby.includes(key)) translated = key.split(':')[0];
+      else if (req.groupby.includes(key)) {
+        translated = fieldOf(key);
+        if (req.groupby.filter((spec) => fieldOf(spec) === translated).length > 1) {
+          throw new OdooError(
+            'InputValidationError',
+            `orderby "${key}" is ambiguous on this Odoo version: "${translated}" is grouped at more than one granularity`,
+          );
+        }
+      }
       return direction ? `${translated} ${direction}` : translated;
     })
     .join(', ');
@@ -112,10 +154,15 @@ export function buildReadGroupCall(
     return { method: 'formatted_read_group', args: [req.domain], kwargs };
   }
 
-  kwargs.fields = req.aggregates.map((spec) => {
-    const [field, func] = spec.split(':');
-    return `${legacyAlias(spec)}:${func}(${field})`;
-  });
+  // An empty `fields` means "aggregate every stored numeric field" to
+  // read_group, so a count-only request asks for the __count pseudo-field.
+  kwargs.fields =
+    req.aggregates.length > 0
+      ? req.aggregates.map((spec) => {
+          const [field, func] = spec.split(':');
+          return `${legacyAlias(spec)}:${func}(${field})`;
+        })
+      : ['__count'];
   kwargs.groupby = req.groupby;
   // lazy=False: group by every groupby at once and return `__count`.
   kwargs.lazy = false;
@@ -146,9 +193,13 @@ export function normalizeReadGroupRows(
       }
       if (legacy) {
         // __range[spec] is { from, to } for a dated group, false for "no date".
+        // If the server omits the bounds, keep the label so dated groups stay
+        // distinguishable.
         const ranges = row.__range as Record<string, { from?: string } | false> | undefined;
         const from = ranges?.[spec] ? (ranges[spec] as { from?: string }).from : undefined;
-        out[spec] = from ? { value: from, label: value } : false;
+        if (from) out[spec] = { value: from, label: value };
+        else if (value && ranges?.[spec] !== false) out[spec] = { value: null, label: value };
+        else out[spec] = false;
       } else {
         out[spec] = Array.isArray(value) ? { value: value[0], label: value[1] } : false;
       }

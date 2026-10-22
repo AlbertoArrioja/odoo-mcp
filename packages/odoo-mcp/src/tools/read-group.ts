@@ -24,7 +24,7 @@ function describeTool(allowedModels: readonly string[]): string {
     '(by customer, by month, by salesperson, by state…): it returns one row per group instead of',
     'every record, so results are exact and not truncated at the search_read row limit.',
     `groupby: fields to group by; date/datetime fields need a granularity "field:<${GROUPBY_GRANULARITIES.join('|')}>"`,
-    '(e.g. "date_order:month"); an empty array returns a single overall group.',
+    '(e.g. "date_order:month") or the call is rejected; an empty array returns a single overall group.',
     `aggregates: "field:<${AGGREGATE_FUNCTIONS.join('|')}>" (e.g. "amount_total:sum"); omit to get only the`,
     'record count. Every group always includes "__count".',
     'orderby: comma-separated groupby/aggregate specs or "__count", each optionally followed by asc|desc',

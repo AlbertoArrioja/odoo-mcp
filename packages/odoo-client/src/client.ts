@@ -3,6 +3,8 @@ import { OdooAuthError } from './errors.js';
 import {
   type ReadGroupRequest,
   type ReadGroupRow,
+  assertDateGroupbyGranularity,
+  bareGroupbyFields,
   buildReadGroupCall,
   normalizeReadGroupRows,
   parseMajorVersion,
@@ -156,6 +158,9 @@ export class OdooClient {
     context?: Context,
   ): Promise<ReadGroupRow[]> {
     this.requireSession();
+    if (bareGroupbyFields(request).length > 0) {
+      assertDateGroupbyGranularity(model, request, await this.fieldsGet(model, ['type'], context));
+    }
     const major = await this.serverMajorVersion();
     const { method, args, kwargs } = buildReadGroupCall(major, request, context);
     const rows = await this.executeKw(model, method, args, kwargs);
