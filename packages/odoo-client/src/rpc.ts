@@ -7,6 +7,7 @@ import {
   OdooUserError,
   OdooValidationError,
 } from './errors.js';
+import { assertReadOnlyRpc } from './read-only.js';
 
 /**
  * Per-request abort threshold. Aligned with Odoo's typical worker timeout
@@ -59,15 +60,17 @@ const ERROR_MAP: Record<
 /**
  * Single-request transport for Odoo's JSON-RPC stdio surface. Composes the
  * envelope, posts to `${url}${endpoint}`, applies REQUEST_TIMEOUT_MS, and maps
- * server faults onto the typed OdooError hierarchy. Caller passes optional
- * `headers` for cookie/session-id injection.
+ * server faults onto the typed OdooError hierarchy. Takes no caller headers:
+ * every request authenticates through its params, never a session cookie.
  */
 export async function jsonRpc(
   url: string,
   endpoint: string,
   params: Record<string, unknown>,
-  headers?: Record<string, string>,
 ): Promise<unknown> {
+  // Read-only fork: reject anything outside the allowlist before any I/O.
+  assertReadOnlyRpc(endpoint, params);
+
   const id = nextId();
 
   const body: JsonRpcRequest = {
@@ -86,7 +89,6 @@ export async function jsonRpc(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...headers,
       },
       body: JSON.stringify(body),
       signal: controller.signal,

@@ -77,7 +77,7 @@ export async function runProbe(client: OdooClient): Promise<ProbeResult> {
   // -------------------------------------------------------------------
   // Promise 7: userContext — provides language + locale
   // -------------------------------------------------------------------
-  const userContextPromise = client.execute('res.users', 'context_get', [], {}).then((result) => {
+  const userContextPromise = client.contextGet().then((result) => {
     const ctx = result as Record<string, unknown>;
     return {
       lang: (ctx.lang as string | undefined) ?? 'en_US',

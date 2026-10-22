@@ -1,5 +1,14 @@
 import { type AuthStrategy, createAuthStrategy } from './auth.js';
 import { OdooAuthError } from './errors.js';
+import {
+  type ReadGroupRequest,
+  type ReadGroupRow,
+  assertDateGroupbyGranularity,
+  bareGroupbyFields,
+  buildReadGroupCall,
+  normalizeReadGroupRows,
+  parseMajorVersion,
+} from './read-group.js';
 import { jsonRpc } from './rpc.js';
 import type { Context, Domain, OdooConfig, OdooRecord, OdooSession } from './types.js';
 
@@ -26,6 +35,8 @@ function compact(obj: Record<string, unknown>): Record<string, unknown> {
 export class OdooClient {
   private session?: OdooSession;
   private strategy?: AuthStrategy;
+  // common.version is fetched once per client (one client per user session).
+  private serverMajor?: Promise<number>;
 
   constructor(private readonly config: OdooConfig) {}
 
@@ -103,74 +114,57 @@ export class OdooClient {
     return result as OdooRecord[];
   }
 
-  async create(
-    model: string,
-    values: Record<string, unknown> | Record<string, unknown>[],
-    context?: Context,
-  ): Promise<number | number[]> {
-    const kwargs = compact({ context });
-    const result = await this.executeKw(model, 'create', [values], kwargs);
-    return result as number | number[];
-  }
-
-  async write(
-    model: string,
-    ids: number[],
-    values: Record<string, unknown>,
-    context?: Context,
-  ): Promise<boolean> {
-    const kwargs = compact({ context });
-    const result = await this.executeKw(model, 'write', [ids, values], kwargs);
-    return result as boolean;
-  }
-
-  async unlink(model: string, ids: number[], context?: Context): Promise<boolean> {
-    const kwargs = compact({ context });
-    const result = await this.executeKw(model, 'unlink', [ids], kwargs);
-    return result as boolean;
-  }
-
   async searchCount(model: string, domain: Domain, context?: Context): Promise<number> {
     const kwargs = compact({ context });
     const result = await this.executeKw(model, 'search_count', [domain], kwargs);
     return result as number;
   }
 
-  async execute(
-    model: string,
-    method: string,
-    args?: unknown[],
-    kwargs?: Record<string, unknown>,
-    context?: Context,
-  ): Promise<unknown> {
-    const mergedKwargs = compact({ ...(kwargs ?? {}), context });
-    return this.executeKw(model, method, args ?? [], mergedKwargs);
+  /** res.users.context_get — the caller's lang/tz/etc., used by the startup probe. */
+  async contextGet(): Promise<Context> {
+    const result = await this.executeKw('res.users', 'context_get', [], {});
+    return result as Context;
   }
 
-  async runReport(
-    reportId: number | string,
-    docIds: number[],
-    context?: Context,
-  ): Promise<{ content: string; contentType: 'application/pdf' }> {
-    const kwargs = compact({ context });
-    const result = await this.executeKw(
-      'ir.actions.report',
-      '_render_qweb_pdf',
-      [reportId, docIds],
-      kwargs,
-    );
-    // Odoo returns [content_base64, content_type] tuple
-    const tuple = result as [string, string];
-    return { content: tuple[0], contentType: 'application/pdf' };
+  /**
+   * Odoo major version from `common.version`, fetched once per client
+   * instance and cached. A failed lookup is not cached, so it is retried.
+   */
+  async serverMajorVersion(): Promise<number> {
+    if (!this.serverMajor) {
+      this.serverMajor = jsonRpc(this.config.url, JSONRPC, {
+        service: 'common',
+        method: 'version',
+        args: [],
+      })
+        .then(parseMajorVersion)
+        .catch((err: unknown) => {
+          this.serverMajor = undefined;
+          throw err;
+        });
+    }
+    return this.serverMajor;
   }
 
-  async callAction(
+  /**
+   * Grouped aggregation computed by Odoo (SQL GROUP BY), normalised to the
+   * same row shape on every version: formatted_read_group on Odoo 19+,
+   * read_group(lazy=False) before. Callers must validate field/aggregate
+   * specs; see read-group.ts for the row shape.
+   */
+  async readGroup(
     model: string,
-    ids: number[],
-    actionName: string,
+    request: ReadGroupRequest,
     context?: Context,
-  ): Promise<unknown> {
-    return this.execute(model, actionName, [ids], {}, context);
+  ): Promise<ReadGroupRow[]> {
+    this.requireSession();
+    if (bareGroupbyFields(request).length > 0) {
+      assertDateGroupbyGranularity(model, request, await this.fieldsGet(model, ['type'], context));
+    }
+    const major = await this.serverMajorVersion();
+    const { method, args, kwargs } = buildReadGroupCall(major, request, context);
+    const rows = await this.executeKw(model, method, args, kwargs);
+    return normalizeReadGroupRows(major, request, rows);
   }
 
   async fieldsGet(
@@ -184,6 +178,6 @@ export class OdooClient {
   }
 }
 // Note: capability probing is implemented in @netlinksinc/odoo-mcp's probe.ts
-// (the runProbe function) which uses this client's searchRead/execute methods.
+// (the runProbe function) which uses this client's searchRead/contextGet methods.
 // An earlier probe() method on OdooClient was removed during v0.1 hardening
 // because it duplicated runProbe and was never called from the server path.

@@ -11,7 +11,7 @@ import { runProbe } from '../src/probe.js';
 function makeClientMock(): OdooClient {
   return {
     searchRead: vi.fn(),
-    execute: vi.fn(),
+    contextGet: vi.fn(),
   } as unknown as OdooClient;
 }
 
@@ -38,7 +38,7 @@ function setupAllSucceed(client: OdooClient) {
     if (model === 'account.fiscal.year') return FISCAL_YEAR_ROWS;
     return [];
   });
-  vi.mocked(client.execute).mockResolvedValue(USER_CONTEXT);
+  vi.mocked(client.contextGet).mockResolvedValue(USER_CONTEXT);
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ describe('runProbe — ir.actions.report rejects (AC-2)', () => {
       if (model === 'account.fiscal.year') return FISCAL_YEAR_ROWS;
       return [];
     });
-    vi.mocked(client.execute).mockResolvedValue(USER_CONTEXT);
+    vi.mocked(client.contextGet).mockResolvedValue(USER_CONTEXT);
   });
 
   afterEach(() => {
@@ -177,7 +177,7 @@ describe('runProbe — all sub-queries reject (AC-3)', () => {
   beforeEach(() => {
     client = makeClientMock();
     vi.mocked(client.searchRead).mockRejectedValue(new Error('network error'));
-    vi.mocked(client.execute).mockRejectedValue(new Error('network error'));
+    vi.mocked(client.contextGet).mockRejectedValue(new Error('network error'));
     stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   });
 
@@ -264,7 +264,7 @@ describe('runProbe — fiscalYear OdooMissingError fallback', () => {
       if (model === 'res.currency') return CURRENCIES;
       return [];
     });
-    vi.mocked(client.execute).mockResolvedValue(USER_CONTEXT);
+    vi.mocked(client.contextGet).mockResolvedValue(USER_CONTEXT);
   });
 
   afterEach(() => {
@@ -299,7 +299,7 @@ describe('runProbe — userContext missing lang/tz defaults to en_US / UTC', () 
     client = makeClientMock();
     setupAllSucceed(client);
     // context_get returns an empty object
-    vi.mocked(client.execute).mockResolvedValue({});
+    vi.mocked(client.contextGet).mockResolvedValue({});
   });
 
   afterEach(() => {

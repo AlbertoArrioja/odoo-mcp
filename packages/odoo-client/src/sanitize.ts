@@ -1,61 +1,59 @@
 // Key-name pattern that marks a value as PII; matched case-insensitively against
-// every object key in the args tree. Adjust here if Odoo introduces new
-// credential-bearing field names.
+// every object key in the args tree, and against the field name of every
+// domain-shaped triple. Adjust here if Odoo introduces new credential-bearing
+// field names.
 const PII_KEY_PATTERN = /password|credit_card|token|secret|api_key/i;
 
-// Tools whose args may carry user-supplied credentials and so require deep
-// redaction before being passed to logger.toolCall. Other tools (read,
-// search_read, fields_get, etc.) take only domains/ids/fields and don't
-// need sanitisation, so we skip the structuredClone for them.
-const SANITIZED_TOOLS = new Set<string>([
-  'odoo_create',
-  'odoo_write',
-  'odoo_execute',
-  'odoo_call_action',
-]);
+const REDACTED = '[REDACTED]';
 
-function redactObject(obj: Record<string, unknown>): void {
+/**
+ * A domain leaf `[field, operator, value]`, e.g. `['password', '=', 'x']`.
+ * The field may be a dotted path (`user_id.api_key`), which the pattern still
+ * matches.
+ */
+function isPiiDomainLeaf(arr: unknown[]): boolean {
+  return (
+    arr.length === 3 &&
+    typeof arr[0] === 'string' &&
+    typeof arr[1] === 'string' &&
+    PII_KEY_PATTERN.test(arr[0])
+  );
+}
+
+function redact(value: unknown): void {
+  if (Array.isArray(value)) {
+    if (isPiiDomainLeaf(value)) value[2] = REDACTED;
+    for (const item of value) redact(item);
+    return;
+  }
+  if (value === null || typeof value !== 'object') return;
+  const obj = value as Record<string, unknown>;
   for (const key of Object.keys(obj)) {
-    const value = obj[key];
-    if (PII_KEY_PATTERN.test(key)) {
-      obj[key] = '[REDACTED]';
-    } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      redactObject(value as Record<string, unknown>);
-    } else if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
-          redactObject(item as Record<string, unknown>);
-        }
-      }
-    }
+    if (PII_KEY_PATTERN.test(key)) obj[key] = REDACTED;
+    else redact(obj[key]);
   }
 }
 
 /**
- * Returns a sanitised copy of `args` with any PII-shaped keys replaced by
- * `'[REDACTED]'`. For tools not in SANITIZED_TOOLS the original args reference
- * is returned unchanged (no clone, no traversal). For sanitised tools the
- * args are deep-cloned via structuredClone, then the clone is traversed
- * recursively and any key matching PII_KEY_PATTERN has its value redacted.
+ * Returns a sanitised copy of `args` for logging. The args are deep-cloned via
+ * structuredClone, then the clone is traversed recursively and redacted:
+ *   - any object key matching PII_KEY_PATTERN has its value replaced;
+ *   - any domain leaf `[field, op, value]` whose field matches the pattern has
+ *     its value replaced (domains are arrays, so key-based redaction alone
+ *     would log `['password', '=', 'hunter2']` verbatim).
+ *
+ * Read-only fork: upstream only redacted the write tools (odoo_create,
+ * odoo_write, odoo_execute, odoo_call_action). Those tools no longer exist, so
+ * redaction now applies to every tool's args.
  *
  * Used to build the `args_sanitized` field passed to `logger.toolCall` so
  * that log lines never contain raw credentials (US-9 AC-3).
  *
- * @param toolName The MCP tool name (e.g. 'odoo_create'). Determines whether
- *   redaction applies — tools that only accept domains/ids are skipped.
- * @param args The original tool args. NEVER mutated regardless of branch.
- * @returns Either the original args object (when no redaction needed) or a
- *   deep-cloned and sanitised copy.
+ * @param args The original tool args. NEVER mutated.
+ * @returns A deep-cloned and sanitised copy.
  */
-export function sanitizeArgs(
-  toolName: string,
-  args: Record<string, unknown>,
-): Record<string, unknown> {
-  if (!SANITIZED_TOOLS.has(toolName)) {
-    return args;
-  }
-
+export function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   const cloned = structuredClone(args);
-  redactObject(cloned);
+  redact(cloned);
   return cloned;
 }

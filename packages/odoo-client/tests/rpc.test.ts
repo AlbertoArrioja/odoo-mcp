@@ -11,7 +11,9 @@ import {
 import { jsonRpc } from '../src/rpc.js';
 
 const BASE_URL = 'http://localhost:8069';
-const ENDPOINT = '/web/dataset/call_kw';
+const ENDPOINT = '/jsonrpc';
+// Any allowlisted call works here; these tests exercise transport + error mapping.
+const PARAMS = { service: 'common', method: 'version', args: [] };
 
 function makeFetchResponse(body: unknown, status = 200): Response {
   return {
@@ -49,7 +51,7 @@ describe('jsonRpc', () => {
   // 1. Successful response returns result unwrapped
   it('returns response.result on success', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeOdooResponse({ id: 42, name: 'Test' })));
-    const result = await jsonRpc(BASE_URL, ENDPOINT, { model: 'res.partner', method: 'read' });
+    const result = await jsonRpc(BASE_URL, ENDPOINT, PARAMS);
     expect(result).toEqual({ id: 42, name: 'Test' });
   });
 
@@ -59,7 +61,7 @@ describe('jsonRpc', () => {
       'fetch',
       vi.fn().mockResolvedValue(makeOdooError('odoo.exceptions.AccessError', 'You are not allowed to access this document')),
     );
-    await expect(jsonRpc(BASE_URL, ENDPOINT, {})).rejects.toSatisfy((err: unknown) => {
+    await expect(jsonRpc(BASE_URL, ENDPOINT, PARAMS)).rejects.toSatisfy((err: unknown) => {
       expect(err).toBeInstanceOf(OdooAccessError);
       expect((err as OdooError).message).toBe('You are not allowed to access this document');
       return true;
@@ -72,7 +74,7 @@ describe('jsonRpc', () => {
       'fetch',
       vi.fn().mockResolvedValue(makeOdooError('odoo.exceptions.UserError', 'Name is required')),
     );
-    await expect(jsonRpc(BASE_URL, ENDPOINT, {})).rejects.toBeInstanceOf(OdooUserError);
+    await expect(jsonRpc(BASE_URL, ENDPOINT, PARAMS)).rejects.toBeInstanceOf(OdooUserError);
   });
 
   // 4. ValidationError
@@ -81,7 +83,7 @@ describe('jsonRpc', () => {
       'fetch',
       vi.fn().mockResolvedValue(makeOdooError('odoo.exceptions.ValidationError', 'Invalid email format')),
     );
-    await expect(jsonRpc(BASE_URL, ENDPOINT, {})).rejects.toBeInstanceOf(OdooValidationError);
+    await expect(jsonRpc(BASE_URL, ENDPOINT, PARAMS)).rejects.toBeInstanceOf(OdooValidationError);
   });
 
   // 5. MissingError
@@ -90,7 +92,7 @@ describe('jsonRpc', () => {
       'fetch',
       vi.fn().mockResolvedValue(makeOdooError('odoo.exceptions.MissingError', 'Record not found')),
     );
-    await expect(jsonRpc(BASE_URL, ENDPOINT, {})).rejects.toBeInstanceOf(OdooMissingError);
+    await expect(jsonRpc(BASE_URL, ENDPOINT, PARAMS)).rejects.toBeInstanceOf(OdooMissingError);
   });
 
   // 6. AccessDenied → OdooAuthError
@@ -99,7 +101,7 @@ describe('jsonRpc', () => {
       'fetch',
       vi.fn().mockResolvedValue(makeOdooError('odoo.exceptions.AccessDenied', 'Invalid credentials')),
     );
-    const err = await jsonRpc(BASE_URL, ENDPOINT, {}).catch((e) => e);
+    const err = await jsonRpc(BASE_URL, ENDPOINT, PARAMS).catch((e) => e);
     expect(err).toBeInstanceOf(OdooAuthError);
     expect(err.message).toBe('Invalid credentials');
   });
@@ -123,7 +125,7 @@ describe('jsonRpc', () => {
       }),
     );
 
-    const promise = jsonRpc(BASE_URL, ENDPOINT, {});
+    const promise = jsonRpc(BASE_URL, ENDPOINT, PARAMS);
     vi.advanceTimersByTime(30_001);
 
     const err = await promise.catch((e) => e);
@@ -134,7 +136,7 @@ describe('jsonRpc', () => {
   // 8. Fetch rejection (DNS failure)
   it('throws OdooConnectionError wrapping DNS failure message', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('DNS failure')));
-    const err = await jsonRpc(BASE_URL, ENDPOINT, {}).catch((e) => e);
+    const err = await jsonRpc(BASE_URL, ENDPOINT, PARAMS).catch((e) => e);
     expect(err).toBeInstanceOf(OdooConnectionError);
     expect(err.message).toBe('DNS failure');
   });
@@ -145,7 +147,7 @@ describe('jsonRpc', () => {
       'fetch',
       vi.fn().mockResolvedValue(makeOdooError('odoo.custom.Error', 'Something went wrong')),
     );
-    const err = await jsonRpc(BASE_URL, ENDPOINT, {}).catch((e) => e);
+    const err = await jsonRpc(BASE_URL, ENDPOINT, PARAMS).catch((e) => e);
     expect(err).toBeInstanceOf(OdooError);
     expect(err.errorType).toBe('ServerError');
     expect(err.message).toBe('Something went wrong');
@@ -156,13 +158,12 @@ describe('jsonRpc', () => {
     const mockFetch = vi.fn().mockResolvedValue(makeOdooResponse(null));
     vi.stubGlobal('fetch', mockFetch);
 
-    await jsonRpc(BASE_URL, ENDPOINT, { model: 'res.partner', method: 'read' }, { 'X-Custom': 'header' });
+    await jsonRpc(BASE_URL, ENDPOINT, PARAMS);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [calledUrl, calledInit] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(calledUrl).toBe(`${BASE_URL}${ENDPOINT}`);
-    expect((calledInit.headers as Record<string, string>)['Content-Type']).toBe('application/json');
-    expect((calledInit.headers as Record<string, string>)['X-Custom']).toBe('header');
+    expect(calledInit.headers).toEqual({ 'Content-Type': 'application/json' });
 
     const parsedBody = JSON.parse(calledInit.body as string) as {
       jsonrpc: string;
@@ -173,6 +174,6 @@ describe('jsonRpc', () => {
     expect(parsedBody.jsonrpc).toBe('2.0');
     expect(parsedBody.method).toBe('call');
     expect(typeof parsedBody.id).toBe('number');
-    expect(parsedBody.params).toEqual({ model: 'res.partner', method: 'read' });
+    expect(parsedBody.params).toEqual(PARAMS);
   });
 });

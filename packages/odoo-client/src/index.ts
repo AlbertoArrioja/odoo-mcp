@@ -3,4 +3,6 @@ export * from './errors.js';
 export * from './client.js';
 export * from './auth.js';
 export * from './rpc.js';
+export * from './read-only.js';
+export * from './read-group.js';
 export * from './sanitize.js';

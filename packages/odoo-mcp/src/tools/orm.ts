@@ -10,22 +10,15 @@ import type { ClientResolver, RequestContext } from '../types.js';
 
 /** Structural type for AsyncLocalStorage — avoids @types/node dependency. */
 type AsyncLocalStorageLike<T> = { getStore(): T | undefined };
-import {
-  createSchema,
-  readSchema,
-  searchCountSchema,
-  searchReadSchema,
-  unlinkSchema,
-  writeSchema,
-} from './schemas.js';
+import { readSchema, searchCountSchema, searchReadSchema } from './schemas.js';
 
-type ToolResult = {
+export type ToolResult = {
   content: Array<{ type: 'text'; text: string }>;
   isError: boolean;
 };
 
 /** Retrieve the user_id from AsyncLocalStorage context set by HTTP transport (T-11). */
-async function getUserId(): Promise<string | undefined> {
+export async function getUserId(): Promise<string | undefined> {
   try {
     // Lazy access — http-transport.ts exports requestContextStorage in T-11
     const httpTransport = (await import('../http-transport.js')) as unknown as {
@@ -38,7 +31,7 @@ async function getUserId(): Promise<string | undefined> {
 }
 
 /** Format a ZodError as an InputValidationError tool result. */
-function zodErrorResult(
+export function zodErrorResult(
   tool: string,
   err: ZodError,
   logger: Logger,
@@ -47,9 +40,21 @@ function zodErrorResult(
   user_id: string | undefined,
 ): ToolResult {
   const message = err.issues.map((i) => i.message).join('; ');
+  return inputErrorResult(tool, message, logger, t0, rawArgs, user_id);
+}
+
+/** Log and return an InputValidationError tool result with the given message. */
+export function inputErrorResult(
+  tool: string,
+  message: string,
+  logger: Logger,
+  t0: number,
+  rawArgs: Record<string, unknown>,
+  user_id: string | undefined,
+): ToolResult {
   logger.toolCall({
     tool,
-    args_sanitized: sanitizeArgs(tool, rawArgs),
+    args_sanitized: sanitizeArgs(rawArgs),
     latency_ms: Date.now() - t0,
     status: 'error',
     error: 'InputValidationError',
@@ -67,7 +72,9 @@ function zodErrorResult(
 }
 
 /** Shape every tool handler funnels through after SDK-level Zod parsing. */
-async function callOrm<T extends { allowed_company_ids?: number[]; active_company_id?: number }>(
+export async function callOrm<
+  T extends { allowed_company_ids?: number[]; active_company_id?: number },
+>(
   tool: string,
   args: T,
   exec: (parsed: T, context: Context) => Promise<unknown>,
@@ -89,7 +96,7 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
     const result = await exec(args, context);
     logger.toolCall({
       tool,
-      args_sanitized: sanitizeArgs(tool, rawArgs),
+      args_sanitized: sanitizeArgs(rawArgs),
       latency_ms: Date.now() - t0,
       status: 'ok',
       user_id,
@@ -101,7 +108,7 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
       const formatted = formatMcpError(e);
       logger.toolCall({
         tool,
-        args_sanitized: sanitizeArgs(tool, rawArgs),
+        args_sanitized: sanitizeArgs(rawArgs),
         latency_ms,
         status: 'error',
         error: formatted.error_type,
@@ -114,7 +121,7 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
     const message = e instanceof Error ? e.message : String(e);
     logger.toolCall({
       tool,
-      args_sanitized: sanitizeArgs(tool, rawArgs),
+      args_sanitized: sanitizeArgs(rawArgs),
       latency_ms,
       status: 'error',
       error: 'InternalError',
@@ -137,7 +144,7 @@ async function callOrm<T extends { allowed_company_ids?: number[]; active_compan
 }
 
 /**
- * Register all 6 ORM tools on the MCP server using the 3-arg registerTool
+ * Register the 3 read-only ORM tools on the MCP server using the 3-arg registerTool
  * overload that advertises the Zod input schema as JSON Schema in tools/list.
  *
  * Without inputSchema in the registration, MCP clients (Claude Code,
@@ -200,90 +207,6 @@ export function registerOrmTools(
         'odoo_read',
         parseResult.data,
         (parsed, context) => client.read(parsed.model, parsed.ids, parsed.fields, context),
-        logger,
-        client,
-        session,
-        user_id,
-      );
-    },
-  );
-
-  server.registerTool(
-    'odoo_create',
-    {
-      description:
-        'Create one or many records. `values` may be a single dict or an array of dicts.',
-      inputSchema: createSchema.shape,
-    },
-    async (args) => {
-      const { client, session } = await clientResolver();
-      const user_id = await getUserId();
-      const t0 = Date.now();
-      const rawArgs = args as unknown as Record<string, unknown>;
-      const parseResult = createSchema.safeParse(args);
-      if (!parseResult.success)
-        return zodErrorResult('odoo_create', parseResult.error, logger, t0, rawArgs, user_id);
-      return callOrm(
-        'odoo_create',
-        parseResult.data,
-        (parsed, context) =>
-          client.create(
-            parsed.model,
-            parsed.values as Record<string, unknown> | Record<string, unknown>[],
-            context,
-          ),
-        logger,
-        client,
-        session,
-        user_id,
-      );
-    },
-  );
-
-  server.registerTool(
-    'odoo_write',
-    {
-      description: 'Update existing records. Applies `values` to every record in `ids`.',
-      inputSchema: writeSchema.shape,
-    },
-    async (args) => {
-      const { client, session } = await clientResolver();
-      const user_id = await getUserId();
-      const t0 = Date.now();
-      const rawArgs = args as unknown as Record<string, unknown>;
-      const parseResult = writeSchema.safeParse(args);
-      if (!parseResult.success)
-        return zodErrorResult('odoo_write', parseResult.error, logger, t0, rawArgs, user_id);
-      return callOrm(
-        'odoo_write',
-        parseResult.data,
-        (parsed, context) => client.write(parsed.model, parsed.ids, parsed.values, context),
-        logger,
-        client,
-        session,
-        user_id,
-      );
-    },
-  );
-
-  server.registerTool(
-    'odoo_unlink',
-    {
-      description: 'Delete records. Returns true on success.',
-      inputSchema: unlinkSchema.shape,
-    },
-    async (args) => {
-      const { client, session } = await clientResolver();
-      const user_id = await getUserId();
-      const t0 = Date.now();
-      const rawArgs = args as unknown as Record<string, unknown>;
-      const parseResult = unlinkSchema.safeParse(args);
-      if (!parseResult.success)
-        return zodErrorResult('odoo_unlink', parseResult.error, logger, t0, rawArgs, user_id);
-      return callOrm(
-        'odoo_unlink',
-        parseResult.data,
-        (parsed, context) => client.unlink(parsed.model, parsed.ids, context),
         logger,
         client,
         session,

@@ -2,6 +2,7 @@
 import { closeSync, openSync } from 'node:fs';
 import { z } from 'zod';
 // AppConfig defined in types.ts (T-01 — must land first or be stubbed)
+import { MODEL_NAME_PATTERN } from './tools/schemas.js';
 import type { AppConfig } from './types.js';
 
 // Minimal ambient declaration — avoids @types/node dependency.
@@ -25,6 +26,20 @@ const configSchema = z.object({
   ODOO_USERNAME: z.string().min(1),
   ODOO_API_KEY: z.string().min(1),
   ODOO_MCP_LOG_FILE: z.string().optional(),
+  // Comma-separated model allowlist for odoo_read_group. Unset/empty → tool disabled.
+  // Any entry that is not a valid model name fails startup (fail closed, loudly).
+  ODOO_MCP_AGGREGATE_MODELS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? '')
+        .split(',')
+        .map((m) => m.trim())
+        .filter((m) => m !== ''),
+    )
+    .refine((models) => models.every((m) => MODEL_NAME_PATTERN.test(m)), {
+      message: 'ODOO_MCP_AGGREGATE_MODELS contains an invalid model name',
+    }),
   MODE: z.enum(['stdio', 'http']).default('stdio'),
   MCP_PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   MCP_BEARER_TOKEN: z.string().optional(),
@@ -122,6 +137,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       apiKey: parsed.ODOO_API_KEY,
     },
     logFile: parsed.ODOO_MCP_LOG_FILE,
+    aggregateModels: [...new Set(parsed.ODOO_MCP_AGGREGATE_MODELS)],
     mode: parsed.MODE,
     http:
       parsed.MODE === 'http'
