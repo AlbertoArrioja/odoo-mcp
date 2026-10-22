@@ -97,35 +97,6 @@ describe.skip('ApiKeyAuthStrategy', () => {
     const strategy = new ApiKeyAuthStrategy();
     await expect(strategy.authenticate(BASE_CONFIG)).rejects.toBeInstanceOf(OdooAuthError);
   });
-
-  // TC-3: applyAuth returns request unchanged when sessionId is absent
-  it('applyAuth returns the request unchanged when no sessionId', () => {
-    const strategy = new ApiKeyAuthStrategy();
-    const request = { jsonrpc: '2.0' as const, method: 'call' as const, id: 1, params: {} };
-    const session = {
-      uid: 7,
-      companyId: 1,
-      allowedCompanyIds: [1],
-      userContext: {},
-    };
-    expect(strategy.applyAuth(request, session)).toBe(request);
-  });
-
-  // TC-4: applyAuth returns the same request when sessionId IS present (headers passed separately)
-  it('applyAuth returns the same request object when sessionId is present', () => {
-    const strategy = new ApiKeyAuthStrategy();
-    const request = { jsonrpc: '2.0' as const, method: 'call' as const, id: 1, params: {} };
-    const session = {
-      uid: 7,
-      sessionId: 'abc123',
-      companyId: 1,
-      allowedCompanyIds: [1],
-      userContext: {},
-    };
-    // applyAuth does not mutate — headers injection is caller responsibility
-    const result = strategy.applyAuth(request, session);
-    expect(result).toBe(request);
-  });
 });
 
 describe.skip('createAuthStrategy', () => {

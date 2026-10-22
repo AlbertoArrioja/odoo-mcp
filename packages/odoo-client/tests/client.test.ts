@@ -38,7 +38,6 @@ const SESSION: OdooSession = {
 function makeStrategy(session: OdooSession = SESSION) {
   return {
     authenticate: vi.fn().mockResolvedValue(session),
-    applyAuth: vi.fn((r: unknown) => r),
   };
 }
 

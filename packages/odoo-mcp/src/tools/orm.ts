@@ -54,7 +54,7 @@ export function inputErrorResult(
 ): ToolResult {
   logger.toolCall({
     tool,
-    args_sanitized: sanitizeArgs(tool, rawArgs),
+    args_sanitized: sanitizeArgs(rawArgs),
     latency_ms: Date.now() - t0,
     status: 'error',
     error: 'InputValidationError',
@@ -96,7 +96,7 @@ export async function callOrm<
     const result = await exec(args, context);
     logger.toolCall({
       tool,
-      args_sanitized: sanitizeArgs(tool, rawArgs),
+      args_sanitized: sanitizeArgs(rawArgs),
       latency_ms: Date.now() - t0,
       status: 'ok',
       user_id,
@@ -108,7 +108,7 @@ export async function callOrm<
       const formatted = formatMcpError(e);
       logger.toolCall({
         tool,
-        args_sanitized: sanitizeArgs(tool, rawArgs),
+        args_sanitized: sanitizeArgs(rawArgs),
         latency_ms,
         status: 'error',
         error: formatted.error_type,
@@ -121,7 +121,7 @@ export async function callOrm<
     const message = e instanceof Error ? e.message : String(e);
     logger.toolCall({
       tool,
-      args_sanitized: sanitizeArgs(tool, rawArgs),
+      args_sanitized: sanitizeArgs(rawArgs),
       latency_ms,
       status: 'error',
       error: 'InternalError',

@@ -513,9 +513,9 @@ export function createOAuthEndpoints(config: OAuthHandlerConfig): OAuthEndpoints
     }
 
     // Verify end-user Odoo credentials by calling the `common.authenticate`
-    // service directly. Note: OdooClient.execute() routes everything through
-    // `object.execute_kw`, which is for model methods — it CANNOT call the
-    // `common` service. We use the raw jsonRpc helper instead.
+    // service directly. OdooClient only issues `object.execute_kw` calls after
+    // it has a session, so we use the raw jsonRpc helper — which still enforces
+    // the read-only RPC allowlist (common.authenticate is on it).
     let uid: unknown;
     try {
       uid = await jsonRpc(config.odooUrl, '/jsonrpc', {

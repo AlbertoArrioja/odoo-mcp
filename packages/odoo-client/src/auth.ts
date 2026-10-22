@@ -2,7 +2,7 @@
 declare const process: { stderr: { write: (data: string) => boolean } };
 
 import { OdooAuthError } from './errors.js';
-import { type JsonRpcRequest, jsonRpc } from './rpc.js';
+import { jsonRpc } from './rpc.js';
 import type { Context, OdooConfig, OdooSession } from './types.js';
 
 /**
@@ -11,15 +11,11 @@ import type { Context, OdooConfig, OdooSession } from './types.js';
  * removed because it bypassed jsonRpc() and therefore the RPC allowlist).
  *
  * `authenticate(config)` performs the login round-trip and returns the populated
- * OdooSession.
- *
- * `applyAuth(request, session)` is a structural extension point — the shipped
- * strategy returns the request unchanged because authentication is folded
- * into every /jsonrpc call by way of the `[db, uid, api_key, …]` args array.
+ * OdooSession. Authentication is folded into every later /jsonrpc call by way
+ * of the `[db, uid, api_key, …]` args array, so there is no per-request hook.
  */
 export interface AuthStrategy {
   authenticate(config: OdooConfig): Promise<OdooSession>;
-  applyAuth(request: JsonRpcRequest, session: OdooSession): JsonRpcRequest;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,17 +129,11 @@ export class ApiKeyAuthStrategy implements AuthStrategy {
     );
     return { uid, companyId, allowedCompanyIds, userContext };
   }
-
-  applyAuth(request: JsonRpcRequest, _session: OdooSession): JsonRpcRequest {
-    // No-op: auth is folded into every /jsonrpc call via the args array.
-    return request;
-  }
 }
 
 /**
  * Factory: uses ApiKeyAuthStrategy (classic /jsonrpc external API). Writes a
  * plaintext warning to stderr when the URL is http:// per US-2 AC-5.
-
  */
 export async function createAuthStrategy(config: OdooConfig): Promise<AuthStrategy> {
   if (config.url.startsWith('http://')) {

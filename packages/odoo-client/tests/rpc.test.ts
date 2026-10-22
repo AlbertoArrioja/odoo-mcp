@@ -158,13 +158,12 @@ describe('jsonRpc', () => {
     const mockFetch = vi.fn().mockResolvedValue(makeOdooResponse(null));
     vi.stubGlobal('fetch', mockFetch);
 
-    await jsonRpc(BASE_URL, ENDPOINT, PARAMS, { 'X-Custom': 'header' });
+    await jsonRpc(BASE_URL, ENDPOINT, PARAMS);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [calledUrl, calledInit] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(calledUrl).toBe(`${BASE_URL}${ENDPOINT}`);
-    expect((calledInit.headers as Record<string, string>)['Content-Type']).toBe('application/json');
-    expect((calledInit.headers as Record<string, string>)['X-Custom']).toBe('header');
+    expect(calledInit.headers).toEqual({ 'Content-Type': 'application/json' });
 
     const parsedBody = JSON.parse(calledInit.body as string) as {
       jsonrpc: string;

@@ -48,7 +48,7 @@ export function registerIntrospectTool(
         const message = parseResult.error.issues.map((i) => i.message).join('; ');
         logger.toolCall({
           tool: 'odoo_fields_get',
-          args_sanitized: sanitizeArgs('odoo_fields_get', rawArgs),
+          args_sanitized: sanitizeArgs(rawArgs),
           latency_ms: Date.now() - t0,
           status: 'error',
           error: 'InputValidationError',
@@ -77,7 +77,7 @@ export function registerIntrospectTool(
         const result = await client.fieldsGet(parsed.model, parsed.attributes, context);
         logger.toolCall({
           tool: 'odoo_fields_get',
-          args_sanitized: sanitizeArgs('odoo_fields_get', rawArgs),
+          args_sanitized: sanitizeArgs(rawArgs),
           latency_ms: Date.now() - t0,
           status: 'ok',
           user_id,
@@ -92,7 +92,7 @@ export function registerIntrospectTool(
           const formatted = formatMcpError(e);
           logger.toolCall({
             tool: 'odoo_fields_get',
-            args_sanitized: sanitizeArgs('odoo_fields_get', rawArgs),
+            args_sanitized: sanitizeArgs(rawArgs),
             latency_ms,
             status: 'error',
             error: formatted.error_type,
@@ -106,7 +106,7 @@ export function registerIntrospectTool(
         const message = e instanceof Error ? e.message : String(e);
         logger.toolCall({
           tool: 'odoo_fields_get',
-          args_sanitized: sanitizeArgs('odoo_fields_get', rawArgs),
+          args_sanitized: sanitizeArgs(rawArgs),
           latency_ms,
           status: 'error',
           error: 'InternalError',
